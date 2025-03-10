@@ -54,7 +54,8 @@ class SentimentAnalyzer:
         self.sentiment_indicators = []
         
         # Risk thresholds
-        self.risk_thresholds = self.config.get('sentiment', 'risk_thresholds')
+        sentiment_config = self.config.get('sentiment', {})
+        self.risk_thresholds = sentiment_config.get('risk_thresholds', [0.2, 0.4, 0.6, 0.8])
         
     def _initialize_nlp(self):
         """Initialize NLP tools for sentiment analysis."""
@@ -63,12 +64,21 @@ class SentimentAnalyzer:
             nltk.download('vader_lexicon', quiet=True)
             self.vader = SentimentIntensityAnalyzer()
             
-            # Initialize transformers pipeline for more advanced sentiment analysis
-            self.sentiment_pipeline = pipeline(
-                "sentiment-analysis",
-                model=self.config.get('sentiment', 'transformer_model', 'distilbert-base-uncased-finetuned-sst-2-english'),
-                device=0 if self.config.get('general', 'use_gpu', False) else -1
-            )
+            # Try to initialize transformers pipeline
+            try:
+                transformer_model = self.config.get('sentiment', {}).get('transformer_model', 'distilbert-base-uncased-finetuned-sst-2-english')
+                use_gpu = self.config.get('general', {}).get('use_gpu', False)
+                
+                self.sentiment_pipeline = pipeline(
+                    "sentiment-analysis",
+                    model=transformer_model,
+                    device=0 if use_gpu else -1
+                )
+                self.logger.info("Transformer pipeline initialized successfully")
+            except Exception as e:
+                self.logger.warning(f"Failed to initialize transformer pipeline: {str(e)}")
+                self.logger.warning("Using VADER sentiment analysis only")
+                self.sentiment_pipeline = None
             
             self.logger.info("NLP components initialized successfully")
         except Exception as e:
@@ -78,27 +88,29 @@ class SentimentAnalyzer:
     def _initialize_api_clients(self):
         """Initialize API clients for data collection."""
         try:
+            apis_config = self.config.get('apis', {})
+            
             # Twitter API
-            twitter_config = self.config.get('apis', 'twitter')
+            twitter_config = apis_config.get('twitter', {})
             self.twitter_client = tweepy.Client(
-                bearer_token=twitter_config.get('bearer_token'),
-                consumer_key=twitter_config.get('consumer_key'),
-                consumer_secret=twitter_config.get('consumer_secret'),
-                access_token=twitter_config.get('access_token'),
-                access_token_secret=twitter_config.get('access_token_secret')
+                bearer_token=twitter_config.get('bearer_token', ''),
+                consumer_key=twitter_config.get('consumer_key', ''),
+                consumer_secret=twitter_config.get('consumer_secret', ''),
+                access_token=twitter_config.get('access_token', ''),
+                access_token_secret=twitter_config.get('access_token_secret', '')
             )
             
             # Reddit API
-            reddit_config = self.config.get('apis', 'reddit')
+            reddit_config = apis_config.get('reddit', {})
             self.reddit_client = praw.Reddit(
-                client_id=reddit_config.get('client_id'),
-                client_secret=reddit_config.get('client_secret'),
-                user_agent=reddit_config.get('user_agent')
+                client_id=reddit_config.get('client_id', ''),
+                client_secret=reddit_config.get('client_secret', ''),
+                user_agent=reddit_config.get('user_agent', 'crisis_sentinel/1.0')
             )
             
             # News API
-            news_config = self.config.get('apis', 'news')
-            self.news_client = NewsApiClient(api_key=news_config.get('api_key'))
+            news_config = apis_config.get('news', {})
+            self.news_client = NewsApiClient(api_key=news_config.get('api_key', ''))
             
             self.logger.info("API clients initialized successfully")
         except Exception as e:
@@ -109,7 +121,8 @@ class SentimentAnalyzer:
         """Initialize the sentiment analyzer with historical data."""
         try:
             # Load historical sentiment data
-            historical_data_path = self.config.get('data', 'historical_sentiment_path')
+            data_config = self.config.get('data', {})
+            historical_data_path = data_config.get('historical_sentiment_path', 'data/historical_sentiment.json')
             if os.path.exists(historical_data_path):
                 with open(historical_data_path, 'r', encoding='utf-8') as f:
                     self.historical_sentiment = json.load(f)
@@ -150,7 +163,8 @@ class SentimentAnalyzer:
     def _save_historical_data(self):
         """Save historical sentiment data to disk."""
         try:
-            historical_data_path = self.config.get('data', 'historical_sentiment_path')
+            data_config = self.config.get('data', {})
+            historical_data_path = data_config.get('historical_sentiment_path', 'data/historical_sentiment.json')
             os.makedirs(os.path.dirname(historical_data_path), exist_ok=True)
             
             with open(historical_data_path, 'w', encoding='utf-8') as f:
@@ -166,9 +180,10 @@ class SentimentAnalyzer:
         
         try:
             # Get sources from config
-            sources = self.config.get('sentiment', 'news_sources')
-            keywords = self.config.get('sentiment', 'crisis_keywords')
-            days_back = self.config.get('sentiment', 'days_back', 7)
+            sentiment_config = self.config.get('sentiment', {})
+            sources = sentiment_config.get('news_sources', [])
+            keywords = sentiment_config.get('crisis_keywords', [])
+            days_back = sentiment_config.get('days_back', 7)
             
             # Calculate date range
             to_date = datetime.datetime.now()
@@ -219,7 +234,8 @@ class SentimentAnalyzer:
         
         try:
             # Twitter data collection
-            twitter_keywords = self.config.get('sentiment', 'twitter_keywords')
+            sentiment_config = self.config.get('sentiment', {})
+            twitter_keywords = sentiment_config.get('twitter_keywords', [])
             for keyword in twitter_keywords:
                 tweets = self.twitter_client.search_recent_tweets(
                     query=keyword,
@@ -239,8 +255,8 @@ class SentimentAnalyzer:
                             })
             
             # Reddit data collection
-            reddit_subreddits = self.config.get('sentiment', 'reddit_subreddits')
-            limit = self.config.get('sentiment', 'reddit_limit', 100)
+            reddit_subreddits = sentiment_config.get('reddit_subreddits', [])
+            limit = sentiment_config.get('reddit_limit', 100)
             
             for subreddit_name in reddit_subreddits:
                 subreddit = self.reddit_client.subreddit(subreddit_name)
@@ -295,23 +311,38 @@ class SentimentAnalyzer:
             # Get VADER sentiment
             vader_score = self.vader.polarity_scores(text)
             
-            # Get transformer sentiment
-            transformer_result = self.sentiment_pipeline(text)[0]
-            
-            # Combine sentiment analyses
-            sentiment_score = {
-                'vader': vader_score,
-                'transformer': {
-                    'label': transformer_result['label'],
-                    'score': transformer_result['score']
-                },
-                'combined_score': self._normalize_sentiment_score(vader_score, transformer_result),
-                'source': article['source'],
-                'keyword': article['keyword'],
-                'url': article['url'],
-                'title': article['title'],
-                'published_at': article['published_at']
-            }
+            # Get transformer sentiment if available
+            if self.sentiment_pipeline:
+                transformer_result = self.sentiment_pipeline(text)[0]
+                combined_score = self._normalize_sentiment_score(vader_score, transformer_result)
+                
+                sentiment_score = {
+                    'vader': vader_score,
+                    'transformer': {
+                        'label': transformer_result['label'],
+                        'score': transformer_result['score']
+                    },
+                    'combined_score': combined_score,
+                    'source': article['source'],
+                    'keyword': article['keyword'],
+                    'url': article['url'],
+                    'title': article['title'],
+                    'published_at': article['published_at']
+                }
+            else:
+                # Use only VADER if transformer is not available
+                combined_score = vader_score['compound']
+                
+                sentiment_score = {
+                    'vader': vader_score,
+                    'transformer': None,
+                    'combined_score': combined_score,
+                    'source': article['source'],
+                    'keyword': article['keyword'],
+                    'url': article['url'],
+                    'title': article['title'],
+                    'published_at': article['published_at']
+                }
             
             results['scores'].append(sentiment_score)
             
@@ -352,21 +383,34 @@ class SentimentAnalyzer:
             # Get VADER sentiment
             vader_score = self.vader.polarity_scores(tweet['text'])
             
-            # Get transformer sentiment
-            transformer_result = self.sentiment_pipeline(tweet['text'])[0]
-            
-            # Combine sentiment analyses
-            sentiment_score = {
-                'vader': vader_score,
-                'transformer': {
-                    'label': transformer_result['label'],
-                    'score': transformer_result['score']
-                },
-                'combined_score': self._normalize_sentiment_score(vader_score, transformer_result),
-                'metrics': tweet['metrics'],
-                'keyword': tweet['keyword'],
-                'created_at': tweet['created_at']
-            }
+            # Get transformer sentiment if available
+            if self.sentiment_pipeline:
+                transformer_result = self.sentiment_pipeline(tweet['text'])[0]
+                combined_score = self._normalize_sentiment_score(vader_score, transformer_result)
+                
+                sentiment_score = {
+                    'vader': vader_score,
+                    'transformer': {
+                        'label': transformer_result['label'],
+                        'score': transformer_result['score']
+                    },
+                    'combined_score': combined_score,
+                    'metrics': tweet['metrics'],
+                    'keyword': tweet['keyword'],
+                    'created_at': tweet['created_at']
+                }
+            else:
+                # Use only VADER if transformer is not available
+                combined_score = vader_score['compound']
+                
+                sentiment_score = {
+                    'vader': vader_score,
+                    'transformer': None,
+                    'combined_score': combined_score,
+                    'metrics': tweet['metrics'],
+                    'keyword': tweet['keyword'],
+                    'created_at': tweet['created_at']
+                }
             
             results['scores'].append(sentiment_score)
             
@@ -401,21 +445,34 @@ class SentimentAnalyzer:
             # Get VADER sentiment
             vader_score = self.vader.polarity_scores(text)
             
-            # Get transformer sentiment
-            transformer_result = self.sentiment_pipeline(text)[0]
-            
-            # Combine sentiment analyses
-            sentiment_score = {
-                'vader': vader_score,
-                'transformer': {
-                    'label': transformer_result['label'],
-                    'score': transformer_result['score']
-                },
-                'combined_score': self._normalize_sentiment_score(vader_score, transformer_result),
-                'score': post['score'],
-                'subreddit': post['subreddit'],
-                'created_utc': post['created_utc']
-            }
+            # Get transformer sentiment if available
+            if self.sentiment_pipeline:
+                transformer_result = self.sentiment_pipeline(text)[0]
+                combined_score = self._normalize_sentiment_score(vader_score, transformer_result)
+                
+                sentiment_score = {
+                    'vader': vader_score,
+                    'transformer': {
+                        'label': transformer_result['label'],
+                        'score': transformer_result['score']
+                    },
+                    'combined_score': combined_score,
+                    'score': post['score'],
+                    'subreddit': post['subreddit'],
+                    'created_utc': post['created_utc']
+                }
+            else:
+                # Use only VADER if transformer is not available
+                combined_score = vader_score['compound']
+                
+                sentiment_score = {
+                    'vader': vader_score,
+                    'transformer': None,
+                    'combined_score': combined_score,
+                    'score': post['score'],
+                    'subreddit': post['subreddit'],
+                    'created_utc': post['created_utc']
+                }
             
             results['scores'].append(sentiment_score)
             
@@ -433,11 +490,16 @@ class SentimentAnalyzer:
         
         return results
     
-    def _normalize_sentiment_score(self, vader_score, transformer_result) -> float:
+    def _normalize_sentiment_score(self, vader_score, transformer_result=None) -> float:
         """Normalize and combine sentiment scores from different algorithms."""
+        # If transformer result is not available, just use VADER
+        if transformer_result is None:
+            return vader_score['compound']
+            
         # Weight for each algorithm
-        vader_weight = self.config.get('sentiment', 'vader_weight', 0.4)
-        transformer_weight = self.config.get('sentiment', 'transformer_weight', 0.6)
+        sentiment_config = self.config.get('sentiment', {})
+        vader_weight = sentiment_config.get('vader_weight', 0.4)
+        transformer_weight = sentiment_config.get('transformer_weight', 0.6)
         
         # Normalize vader score (-1 to 1 range)
         normalized_vader = vader_score['compound']
@@ -454,7 +516,8 @@ class SentimentAnalyzer:
     def _calculate_aggregate_sentiment(self, sentiment_results) -> Dict[str, Any]:
         """Calculate aggregate sentiment across all sources."""
         # Weights for each source
-        weights = self.config.get('sentiment', 'source_weights', {
+        sentiment_config = self.config.get('sentiment', {})
+        weights = sentiment_config.get('source_weights', {
             'news': 0.5,
             'twitter': 0.3,
             'reddit': 0.2
@@ -539,7 +602,8 @@ class SentimentAnalyzer:
         }
         
         # Determine if a significant shift is detected
-        threshold = self.config.get('sentiment', 'shift_threshold', 0.3)
+        sentiment_config = self.config.get('sentiment', {})
+        threshold = sentiment_config.get('shift_threshold', 0.3)
         max_shift = max([abs(s['magnitude']) for s in shifts.values()])
         
         detected = max_shift > threshold
@@ -641,7 +705,8 @@ class SentimentAnalyzer:
         })
         
         # Limit history size
-        max_history = self.config.get('data', 'max_sentiment_history', 365)  # Default 1 year
+        data_config = self.config.get('data', {})
+        max_history = data_config.get('max_sentiment_history', 365)  # Default 1 year
         if len(self.historical_sentiment['history']) > max_history:
             # Sort by timestamp and keep most recent
             self.historical_sentiment['history'] = sorted(

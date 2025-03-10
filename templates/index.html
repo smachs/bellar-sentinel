@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Crisis Sentinel - Crisis Prediction Dashboard</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chart.js@4.0.0/dist/chart.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
@@ -203,8 +203,25 @@
         </div>
     </footer>
 
+    <!-- Load Scripts in the correct order: dependencies first, then our code -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.0.0/dist/chart.umd.min.js"></script>
+    <!-- Primary Chart.js CDN with fallback -->
+    <script>
+        // Function to load Chart.js from fallback if primary fails
+        function loadFallbackChart() {
+            console.log("Attempting to load Chart.js from fallback CDN...");
+            var fallbackScript = document.createElement('script');
+            fallbackScript.src = "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js";
+            fallbackScript.onerror = function() {
+                console.error("Failed to load Chart.js from fallback CDN too. Charts will not be displayed.");
+            };
+            document.head.appendChild(fallbackScript);
+        }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js" 
+            onerror="loadFallbackChart()">
+    </script>
+    <!-- Only load our application script after everything else -->
     <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>
 </html> 

@@ -67,6 +67,12 @@ function setupEventListeners() {
  * Initialize chart visualizations
  */
 function initializeCharts() {
+    // Check if Chart.js is loaded
+    if (typeof Chart === 'undefined') {
+        console.error('Chart.js is not loaded. Charts will not be displayed.');
+        return;
+    }
+
     // Sentiment chart
     const sentimentCtx = document.getElementById('sentiment-chart').getContext('2d');
     dashboardState.sentimentChart = new Chart(sentimentCtx, {
@@ -354,6 +360,12 @@ function updateMarketSection(marketData) {
  * Update sentiment chart with data
  */
 function updateSentimentChart() {
+    // Check if chart exists
+    if (!dashboardState.sentimentChart) {
+        console.warn('Sentiment chart not initialized. Skipping update.');
+        return;
+    }
+
     // In a real implementation, this would use historical sentiment data
     // For now, we'll use random data as a placeholder
     const randomData = Array.from({length: 7}, () => Math.random() * 2 - 1);
@@ -366,6 +378,12 @@ function updateSentimentChart() {
  * Update market chart with data
  */
 function updateMarketChart() {
+    // Check if chart exists
+    if (!dashboardState.marketChart) {
+        console.warn('Market chart not initialized. Skipping update.');
+        return;
+    }
+    
     // In a real implementation, this would use actual market indicator data
     // For now, we'll use random data as a placeholder
     const randomData = Array.from({length: 5}, () => Math.floor(Math.random() * 5) + 1);

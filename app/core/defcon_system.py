@@ -36,7 +36,8 @@ class DefconSystem:
         self.risk_components = {}
         
         # Risk level thresholds (0-1 range maps to 1-5 levels)
-        self.risk_thresholds = self.config.get('general', 'risk_thresholds', [0.2, 0.4, 0.6, 0.8])
+        general_config = self.config.get('general', {})
+        self.risk_thresholds = general_config.get('risk_thresholds', [0.2, 0.4, 0.6, 0.8])
     
     def initialize(self):
         """Initialize the system."""
@@ -65,8 +66,10 @@ class DefconSystem:
             market_risk = market_data.get('indicators', {}).get('aggregate', {}).get('risk_index', 0.0)
             
             # Get weights for each component
-            sentiment_weight = self.config.get('defcon', 'component_weights', {}).get('sentiment', 0.5)
-            market_weight = self.config.get('defcon', 'component_weights', {}).get('market', 0.5)
+            defcon_config = self.config.get('defcon', {})
+            component_weights = defcon_config.get('component_weights', {})
+            sentiment_weight = component_weights.get('sentiment', 0.5)
+            market_weight = component_weights.get('market', 0.5)
             
             # Calculate weighted average risk
             weighted_risk = (
@@ -165,6 +168,8 @@ class DefconSystem:
             # Add specific concerns
             concerns = sentiment_summary.get('concerns', [])
             for i, concern in enumerate(concerns):
+                if i >= 3:  # Limit to top 3 concerns
+                    break
                 insights.append({
                     'type': 'sentiment_concern',
                     'title': f"Sentiment Concern #{i+1}",
@@ -185,6 +190,8 @@ class DefconSystem:
             # Add specific findings
             findings = market_summary.get('key_findings', [])
             for i, finding in enumerate(findings):
+                if i >= 3:  # Limit to top 3 findings
+                    break
                 insights.append({
                     'type': 'market_finding',
                     'title': f"Market Finding #{i+1}",

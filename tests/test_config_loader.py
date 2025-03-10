@@ -76,7 +76,7 @@ class TestConfigLoader(unittest.TestCase):
         loader.config = test_config
 
         # Test retrieving nested values
-        self.assertEqual(loader.get('level1', 'level2', 'level3'), 'value')
+        self.assertEqual(loader.get('level1', default= 'level2', default='level3'), 'value')
 
         # Test retrieving non-existent values
         self.assertIsNone(loader.get('nonexistent'))

@@ -10,6 +10,7 @@ import numpy as np
 import re
 import logging
 from typing import Dict, List, Any, Union, Optional
+import datetime
 
 
 class DataProcessor:
@@ -332,7 +333,7 @@ class DataProcessor:
             data = []
             for item in sentiment_history:
                 timestamp = pd.to_datetime(item.get('timestamp'))
-                score = item.get('data', {}).get('aggregate', {}).get('score', 0)
+                score = item.get('data', {}).get('aggregate', {}).get('score', default=0)
                 data.append({'timestamp': timestamp, 'score': score})
             
             df = pd.DataFrame(data)
@@ -375,4 +376,58 @@ class DataProcessor:
                 'medium_term_rate': 0,
                 'long_term_rate': 0,
                 'acceleration': 0
-            } 
+            }
+
+    def _process_historical_sentiment(self, raw_data):
+        """Process raw historical sentiment data into trend charts."""
+        result = {
+            'trends': {},
+            'anomalies': []
+        }
+        
+        if not raw_data or 'history' not in raw_data:
+            return result
+        
+        # Get time series data
+        time_series = []
+        for item in raw_data['history']:
+            if 'timestamp' in item and 'data' in item:
+                # Convert timestamp to datetime
+                try:
+                    timestamp = datetime.datetime.fromisoformat(item['timestamp'])
+                    
+                    # Get aggregate score (normalize to -1 to 1 range)
+                    score = item.get('data', {}).get('aggregate', {}).get('score', 0)
+                    
+                    time_series.append({
+                        'timestamp': timestamp,
+                        'score': score
+                    })
+                except ValueError:
+                    continue
+        
+        # Sort by timestamp
+        time_series.sort(key=lambda x: x['timestamp'])
+        
+        # Generate trend data
+        if time_series:
+            dates = [item['timestamp'].strftime('%Y-%m-%d') for item in time_series]
+            scores = [item['score'] for item in time_series]
+            
+            result['trends']['sentiment'] = {
+                'dates': dates,
+                'values': scores
+            }
+            
+            # Detect anomalies (simple threshold-based for now)
+            threshold = 0.5
+            for i, score in enumerate(scores):
+                if abs(score) > threshold:
+                    result['anomalies'].append({
+                        'date': dates[i],
+                        'score': score,
+                        'direction': 'positive' if score > 0 else 'negative',
+                        'magnitude': abs(score)
+                    })
+        
+        return result 

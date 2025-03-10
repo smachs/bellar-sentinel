@@ -103,10 +103,14 @@ def main():
         market_monitor.initialize()
         defcon_system.initialize()
         
+        # Get server configuration
+        server_config = config.get('server', {})
+        host = server_config.get('host', '0.0.0.0')
+        port = server_config.get('port', 5000)
+        debug = server_config.get('debug', True)
+        
         # Start the Flask application
-        app.run(host=config.get('server', 'host'),
-                port=config.get('server', 'port'),
-                debug=config.get('server', 'debug'))
+        app.run(host=host, port=port, debug=debug)
                 
     except Exception as e:
         logger.critical(f"Failed to start Crisis Sentinel: {str(e)}")

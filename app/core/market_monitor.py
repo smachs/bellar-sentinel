@@ -20,6 +20,33 @@ import yfinance as yf
 # Local imports
 from app.utils.data_processor import DataProcessor
 
+class CustomJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles non-serializable types."""
+    def default(self, obj):
+        try:
+            if isinstance(obj, (np.integer, np.floating, np.bool_)):
+                return obj.item()
+            if isinstance(obj, datetime.datetime):
+                return obj.isoformat()
+            if isinstance(obj, pd.DataFrame):
+                return obj.to_dict(orient='records')
+            if isinstance(obj, pd.Series):
+                return obj.to_dict()
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            if isinstance(obj, (set, tuple)):
+                return list(obj)
+            if hasattr(obj, '__dict__'):
+                # For custom objects, convert to dict but with a safety net
+                try:
+                    return {k: v for k, v in obj.__dict__.items() 
+                           if not k.startswith('_') and not callable(v)}
+                except:
+                    return str(obj)
+            return super(CustomJSONEncoder, self).default(obj)
+        except Exception:
+            # Last resort, convert to string
+            return str(obj)
 
 class MarketMonitor:
     """
@@ -40,10 +67,11 @@ class MarketMonitor:
         self.last_updated = None
         
         # Risk thresholds
-        self.risk_thresholds = self.config.get('market', 'risk_thresholds')
+        self.risk_thresholds = self.config.get('market', {}).get('risk_thresholds', [0.2, 0.4, 0.6, 0.8])
         
         # Market indicators to track
-        self.indicators = self.config.get('market', 'indicators', {
+        market_config = self.config.get('market', {})
+        self.indicators = market_config.get('indicators', {
             'yield_curve': {
                 'enabled': True,
                 'weight': 0.25,
@@ -106,20 +134,43 @@ class MarketMonitor:
         """Initialize market monitoring with historical data."""
         try:
             # Load historical market data
-            historical_data_path = self.config.get('data', 'historical_market_path')
+            data_config = self.config.get('data', {})
+            historical_data_path = data_config.get('historical_market_path', 'data/historical_market.json')
+            
             if os.path.exists(historical_data_path):
-                with open(historical_data_path, 'r', encoding='utf-8') as f:
-                    self.historical_data = json.load(f)
+                try:
+                    with open(historical_data_path, 'r', encoding='utf-8') as f:
+                        self.historical_data = json.load(f)
+                    self.logger.info(f"Loaded historical market data from {historical_data_path}")
+                except json.JSONDecodeError as e:
+                    self.logger.warning(f"Corrupted historical market data file: {str(e)}. Creating new baseline data.")
+                    # Backup the corrupted file
+                    backup_path = f"{historical_data_path}.bak"
+                    try:
+                        if os.path.exists(backup_path):
+                            os.remove(backup_path)
+                        os.rename(historical_data_path, backup_path)
+                        self.logger.info(f"Backed up corrupted file to {backup_path}")
+                    except Exception as backup_error:
+                        self.logger.error(f"Failed to backup corrupted data file: {str(backup_error)}")
                     
-            # Initialize baseline market data
+                    # Reset historical data
+                    self.historical_data = None
+            
+            # Initialize baseline market data if needed
             if not self.historical_data:
-                self.logger.warning("No historical market data found, initializing baseline")
+                self.logger.warning("No historical market data found or failed to load, initializing baseline")
                 self._initialize_baseline_data()
                 
             self.logger.info("Market monitor initialized successfully")
         except Exception as e:
             self.logger.error(f"Failed to initialize market monitor: {str(e)}")
-            raise
+            # Initialize with empty data rather than crashing the entire application
+            self.historical_data = {
+                'baseline': {},
+                'history': []
+            }
+            # Don't re-raise the exception to allow the application to continue
     
     def _initialize_baseline_data(self):
         """Initialize baseline market data from current readings."""
@@ -146,13 +197,37 @@ class MarketMonitor:
     def _save_historical_data(self):
         """Save historical market data to disk."""
         try:
-            historical_data_path = self.config.get('data', 'historical_market_path')
+            if not self.historical_data:
+                self.logger.warning("No historical data to save")
+                return
+                
+            data_config = self.config.get('data', {})
+            historical_data_path = data_config.get('historical_market_path', 'data/historical_market.json')
             os.makedirs(os.path.dirname(historical_data_path), exist_ok=True)
             
-            with open(historical_data_path, 'w', encoding='utf-8') as f:
-                json.dump(self.historical_data, f, indent=2)
+            # Use atomic writing to prevent corruption:
+            # First write to a temp file, then rename it
+            temp_path = f"{historical_data_path}.tmp"
+            
+            # Serialize the data
+            try:
+                serialized_data = json.dumps(self.historical_data, indent=2, cls=CustomJSONEncoder)
                 
-            self.logger.info("Historical market data saved successfully")
+                # Write to temp file
+                with open(temp_path, 'w', encoding='utf-8') as f:
+                    f.write(serialized_data)
+                
+                # If we got here, the write was successful, so rename to final path
+                if os.path.exists(historical_data_path):
+                    os.remove(historical_data_path)
+                os.rename(temp_path, historical_data_path)
+                
+                self.logger.info("Historical market data saved successfully")
+            except Exception as serialize_error:
+                self.logger.error(f"Error serializing historical data: {str(serialize_error)}")
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+                
         except Exception as e:
             self.logger.error(f"Failed to save historical market data: {str(e)}")
     
@@ -161,6 +236,12 @@ class MarketMonitor:
         market_data = {}
         
         try:
+            # Define replacement tickers for problematic ones
+            ticker_replacements = {
+                'USD3MTD156N': '^IRX',  # Replace with 13-week Treasury Bill
+                '^UST2Y': '^TYX'       # Replace with 30-Year Treasury Yield
+            }
+            
             # Get all unique tickers to fetch
             tickers = set()
             for indicator_group in self.indicators.values():
@@ -169,13 +250,18 @@ class MarketMonitor:
                 
                 for ticker_key, ticker_val in indicator_group.get('tickers', {}).items():
                     if isinstance(ticker_val, str):
-                        tickers.add(ticker_val)
+                        # Use replacement if ticker is problematic
+                        ticker_to_use = ticker_replacements.get(ticker_val, ticker_val)
+                        tickers.add(ticker_to_use)
                     elif isinstance(ticker_val, dict) and 'components' in ticker_val:
-                        tickers.update(ticker_val['components'])
+                        # Apply replacements to components
+                        components = [ticker_replacements.get(t, t) for t in ticker_val['components']]
+                        tickers.update(components)
             
             # Determine date range
             end_date = datetime.datetime.now().strftime('%Y-%m-%d')
-            days_back = self.config.get('market', 'days_back', 30)
+            market_config = self.config.get('market', {})
+            days_back = market_config.get('days_back', 30)
             start_date = (datetime.datetime.now() - datetime.timedelta(days=days_back)).strftime('%Y-%m-%d')
             
             # Fetch all ticker data at once
@@ -320,7 +406,7 @@ class MarketMonitor:
                 
                 # Calculate changes
                 if len(df) > 1:
-                    daily_change = df['Close'].pct_change().iloc[-1] * 100
+                    daily_change = df['Close'].pct_change(fill_method=None).iloc[-1] * 100
                     result['changes'][f"{name}_daily"] = daily_change
                 
                 if len(df) > 5:
@@ -471,7 +557,7 @@ class MarketMonitor:
                 
                 # Calculate changes
                 if len(df) > 1:
-                    daily_change = df['Close'].pct_change().iloc[-1] * 100
+                    daily_change = df['Close'].pct_change(fill_method=None).iloc[-1] * 100
                     result['changes'][f"{name}_daily"] = daily_change
                 
                 if len(df) > 5:
@@ -530,7 +616,7 @@ class MarketMonitor:
                 
                 # Calculate changes
                 if len(df) > 1:
-                    daily_change = df['Close'].pct_change().iloc[-1] * 100
+                    daily_change = df['Close'].pct_change(fill_method=None).iloc[-1] * 100
                     result['changes'][f"{name}_daily"] = daily_change
                 
                 if len(df) > 5:
@@ -566,32 +652,48 @@ class MarketMonitor:
         return result
     
     def _calculate_aggregate_indicators(self, indicators) -> Dict[str, Any]:
-        """Calculate aggregate indicators across all categories."""
+        """Calculate aggregate risk indicators from all indicator categories."""
         aggregate_result = {
-            'timestamp': indicators['timestamp']
+            'risk_indices': {},
+            'risk_levels': {}
         }
         
-        # Calculate weighted risk level
-        weighted_risk = 0
-        total_weight = 0
-        
-        for category, data in indicators.items():
-            if category in ('timestamp', 'aggregate'):
-                continue
+        try:
+            # Calculate weighted risk index for each enabled indicator
+            total_weight = 0
+            weighted_risk_sum = 0
+            
+            for category in self.indicators:
+                if not category in indicators:
+                    continue
                 
-            # Get category weight
-            category_weight = self.indicators.get(category, {}).get('weight', 0)
+                data = indicators[category]
+                
+                # Get category weight
+                category_weight = self.indicators.get(category, {}).get('weight', 0)
+                
+                # Get risk level for category
+                category_risk = data.get('risk_level', 0)
+                
+                if category_weight > 0 and category_risk > 0:
+                    # Store individual risk level
+                    aggregate_result['risk_levels'][category] = category_risk
+                    
+                    # Convert risk level (1-5) to risk index (0-1)
+                    category_risk_index = (category_risk - 1) / 4
+                    
+                    # Store individual risk index
+                    aggregate_result['risk_indices'][category] = category_risk_index
+                    
+                    # Add to weighted sum
+                    weighted_risk_sum += category_risk_index * category_weight
+                    total_weight += category_weight
             
-            # Get category risk level
-            category_risk = data.get('risk_level', 0)
-            
-            if category_risk > 0:
-                weighted_risk += category_risk * category_weight
-                total_weight += category_weight
-        
-        # Calculate final risk level
-        if total_weight > 0:
-            final_risk_index = weighted_risk / total_weight
+            # Calculate final risk index
+            if total_weight > 0:
+                final_risk_index = weighted_risk_sum / total_weight
+            else:
+                final_risk_index = 0
             
             # Scale to 0-1 range
             final_risk_index = (final_risk_index - 1) / 4
@@ -601,7 +703,8 @@ class MarketMonitor:
             
             aggregate_result['risk_index'] = final_risk_index
             aggregate_result['risk_level'] = final_risk_level
-        else:
+        except Exception as e:
+            self.logger.error(f"Error calculating aggregate indicators: {str(e)}")
             aggregate_result['risk_index'] = 0
             aggregate_result['risk_level'] = 0
         
@@ -657,52 +760,59 @@ class MarketMonitor:
             }
     
     def _detect_market_changes(self, current_indicators) -> Dict[str, Any]:
-        """Detect significant changes in market indicators from historical data."""
+        """Detect changes in market indicators from historical data."""
         changes = {
-            'detected': False,
-            'categories': {}
+            'categories': {},
+            'overall': {
+                'direction': 'stable',
+                'magnitude': 0
+            },
+            'alerts': []
         }
         
-        if not self.historical_data.get('history'):
-            return changes
-        
-        # Get most recent historical data
-        historical = sorted(
-            self.historical_data['history'],
-            key=lambda x: x['timestamp'],
-            reverse=True
-        )
-        
-        if not historical:
-            return changes
-        
-        # Compare current with historical for each category
-        for category in current_indicators:
-            if category in ('timestamp', 'aggregate'):
-                continue
+        try:
+            # Check if we have historical data
+            if not self.historical_data or 'history' not in self.historical_data or not self.historical_data['history']:
+                return changes
             
-            category_changes = self._detect_category_changes(
-                category,
-                current_indicators.get(category, {}),
-                historical
-            )
+            # Get most recent historical data point
+            historical = sorted(self.historical_data['history'], key=lambda x: x['timestamp'], reverse=True)
             
-            if category_changes.get('detected'):
-                changes['detected'] = True
-                changes['categories'][category] = category_changes
-        
-        # Detect changes in overall risk level
-        if ('aggregate' in current_indicators and
-                historical and 'data' in historical[0] and 'aggregate' in historical[0]['data']):
-            current_risk = current_indicators['aggregate'].get('risk_level', 0)
-            previous_risk = historical[0]['data']['aggregate'].get('risk_level', 0)
+            # Overall risk level change - check if aggregate exists
+            if 'aggregate' in current_indicators and 'data' in historical[0] and 'aggregate' in historical[0]['data']:
+                current_risk = current_indicators['aggregate'].get('risk_level', 0)
+                previous_risk = historical[0]['data']['aggregate'].get('risk_level', 0)
+                
+                # Calculate overall direction and magnitude
+                if current_risk > previous_risk:
+                    changes['overall']['direction'] = 'deteriorating'
+                    changes['overall']['magnitude'] = current_risk - previous_risk
+                elif current_risk < previous_risk:
+                    changes['overall']['direction'] = 'improving'
+                    changes['overall']['magnitude'] = previous_risk - current_risk
+                
+                # Generate alert if risk level increased significantly
+                if current_risk - previous_risk >= 1:
+                    changes['alerts'].append({
+                        'type': 'risk_increase',
+                        'message': f"Overall risk level increased from {previous_risk} to {current_risk}",
+                        'severity': min(current_risk, 5)
+                    })
             
-            if current_risk != previous_risk:
-                changes['overall_risk_change'] = {
-                    'previous': previous_risk,
-                    'current': current_risk,
-                    'direction': 'increased' if current_risk > previous_risk else 'decreased'
-                }
+            # Check each category for changes
+            for category in current_indicators:
+                if category != 'timestamp' and category != 'aggregate' and category in historical[0]['data']:
+                    category_changes = self._detect_category_changes(
+                        category, 
+                        current_indicators[category], 
+                        historical[0]['data'][category]
+                    )
+                    
+                    if category_changes:
+                        changes['categories'][category] = category_changes
+            
+        except Exception as e:
+            self.logger.error(f"Error detecting market changes: {str(e)}")
         
         return changes
     
@@ -780,7 +890,8 @@ class MarketMonitor:
         })
         
         # Limit history size
-        max_history = self.config.get('data', 'max_market_history', 365)  # Default 1 year
+        data_config = self.config.get('data', {})
+        max_history = data_config.get('max_market_history', 365)  # Default 1 year
         if len(self.historical_data['history']) > max_history:
             # Sort by timestamp and keep most recent
             self.historical_data['history'] = sorted(
@@ -793,66 +904,82 @@ class MarketMonitor:
         self._save_historical_data()
     
     def _generate_market_summary(self, indicators, changes) -> Dict[str, Any]:
-        """Generate a human-readable summary of market analysis."""
-        # Risk level descriptions
-        risk_descriptions = [
-            "Unknown",
-            "Very Low",
-            "Low",
-            "Moderate", 
-            "High",
-            "Very High"
-        ]
-        
-        # Get aggregate risk level
-        risk_level = indicators.get('aggregate', {}).get('risk_level', 0)
-        risk_description = risk_descriptions[risk_level] if 0 <= risk_level < len(risk_descriptions) else "Unknown"
-        
-        # Build summary based on key indicators
-        key_findings = []
-        
-        # Yield curve
-        if indicators.get('yield_curve', {}).get('is_inverted'):
-            key_findings.append("Treasury yield curve is inverted, historically a recession indicator")
-        
-        # Volatility
-        if 'vix' in indicators.get('volatility', {}).get('current_values', {}):
-            vix_value = indicators['volatility']['current_values']['vix']
-            if vix_value > 30:
-                key_findings.append(f"VIX at elevated level ({vix_value:.1f}), indicating high market anxiety")
-        
-        # Market indices
-        market_indices = indicators.get('market_indices', {}).get('changes', {})
-        for index in ('sp500_daily', 'nasdaq_daily', 'russell_daily'):
-            if index in market_indices and market_indices[index] < -2:
-                index_name = index.split('_')[0].upper()
-                key_findings.append(f"{index_name} fell {abs(market_indices[index]):.1f}% today")
-        
-        # Credit spreads
-        if 'high_yield_investment_grade' in indicators.get('credit_spreads', {}).get('spreads', {}):
-            spread = indicators['credit_spreads']['spreads']['high_yield_investment_grade']
-            if spread > 1.5:  # Using ETF ratio as proxy
-                key_findings.append("Credit spreads are widening, indicating increased default concerns")
-        
-        # Changes in risk level
-        if 'overall_risk_change' in changes:
-            change = changes['overall_risk_change']
-            prev_desc = risk_descriptions[change['previous']] if 0 <= change['previous'] < len(risk_descriptions) else "Unknown"
-            key_findings.append(f"Market risk level has {change['direction']} from {prev_desc} to {risk_description}")
-        
-        # Generate summary text
-        if key_findings:
-            summary_text = f"Market risk level: {risk_description} ({risk_level}/5). Key findings: {'; '.join(key_findings)}."
-        else:
-            summary_text = f"Market risk level: {risk_description} ({risk_level}/5). No significant market anomalies detected."
-        
-        return {
-            'text': summary_text,
-            'risk_level': risk_level,
-            'risk_description': risk_description,
-            'key_findings': key_findings,
-            'timestamp': indicators['timestamp']
+        """Generate a human-readable summary of market indicators."""
+        summary = {
+            'text': "",
+            'key_findings': [],
+            'risk_level': 0,
+            'direction': 'stable'
         }
+        
+        try:
+            # Risk level descriptions
+            risk_descriptions = [
+                "Very Low",
+                "Low",
+                "Moderate", 
+                "High",
+                "Very High"
+            ]
+            
+            # Get overall risk level
+            risk_level = indicators.get('aggregate', {}).get('risk_level', 0)
+            
+            if risk_level > 0 and risk_level <= 5:
+                risk_description = risk_descriptions[risk_level-1]
+                summary['risk_level'] = risk_level
+            else:
+                risk_description = "Unknown"
+                summary['risk_level'] = 0
+            
+            # Build summary based on key indicators
+            key_findings = []
+            
+            # Yield curve
+            if indicators.get('yield_curve', {}).get('is_inverted'):
+                key_findings.append("Treasury yield curve is inverted, historically a recession indicator")
+            
+            # Volatility
+            if 'vix' in indicators.get('volatility', {}).get('current_values', {}):
+                vix_value = indicators['volatility']['current_values']['vix']
+                if vix_value > 30:
+                    key_findings.append(f"VIX at elevated level ({vix_value:.1f}), indicating high market anxiety")
+            
+            # Market indices
+            market_indices = indicators.get('market_indices', {}).get('changes', {})
+            for index in ('sp500_daily', 'nasdaq_daily', 'russell_daily'):
+                if index in market_indices and market_indices[index] < -2:
+                    index_name = index.split('_')[0].upper()
+                    key_findings.append(f"{index_name} fell {abs(market_indices[index]):.1f}% today")
+            
+            # Credit spreads
+            if 'high_yield_investment_grade' in indicators.get('credit_spreads', {}).get('spreads', {}):
+                spread = indicators['credit_spreads']['spreads']['high_yield_investment_grade']
+                if spread > 1.5:  # Using ETF ratio as proxy
+                    key_findings.append("Credit spreads are widening, indicating increased default concerns")
+            
+            # Changes in risk level
+            if 'overall_risk_change' in changes:
+                change = changes['overall_risk_change']
+                prev_desc = risk_descriptions[change['previous']] if 0 <= change['previous'] < len(risk_descriptions) else "Unknown"
+                key_findings.append(f"Market risk level has {change['direction']} from {prev_desc} to {risk_description}")
+            
+            # Generate summary text
+            if key_findings:
+                summary_text = f"Market risk level: {risk_description} ({risk_level}/5). Key findings: {'; '.join(key_findings)}."
+            else:
+                summary_text = f"Market risk level: {risk_description} ({risk_level}/5). No significant market anomalies detected."
+            
+            summary['text'] = summary_text
+            summary['risk_description'] = risk_description
+            summary['key_findings'] = key_findings
+            summary['risk_level'] = risk_level
+            summary['direction'] = changes['overall']['direction']
+        except Exception as e:
+            self.logger.error(f"Error generating market summary: {str(e)}")
+            summary['text'] = "Unable to generate market summary due to an error."
+        
+        return summary
 
 
 # Utility function (normally from scipy.stats, included here for completeness)

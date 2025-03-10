@@ -30,7 +30,7 @@ def setup_logger(name: str = None, level: str = None, file_path: str = None,
     from app.utils.config_loader import ConfigLoader
     
     # Get configuration
-    config = ConfigLoader().get('logging', {})
+    config = ConfigLoader().get('logging', default={})
     
     # Use parameters or fall back to config
     log_level = level or config.get('level', 'INFO')
