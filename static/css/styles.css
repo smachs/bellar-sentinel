@@ -1,0 +1,208 @@
+/* Crisis Sentinel Dashboard Styles */
+
+:root {
+    --alert-level-1-color: #28a745; /* Very Low - Green */
+    --alert-level-2-color: #5cb85c; /* Low - Light Green */
+    --alert-level-3-color: #ffc107; /* Moderate - Yellow */
+    --alert-level-4-color: #fd7e14; /* High - Orange */
+    --alert-level-5-color: #dc3545; /* Very High - Red */
+    --alert-unknown-color: #6c757d; /* Unknown - Gray */
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f8f9fa;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.footer {
+    margin-top: auto;
+}
+
+/* Alert Level Display */
+.alert-level-display {
+    padding: 20px;
+}
+
+.alert-level-indicator {
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    background-color: var(--alert-unknown-color);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    margin: 0 auto;
+    color: white;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    transition: all 0.3s ease;
+}
+
+.alert-level-number {
+    font-size: 4rem;
+    font-weight: bold;
+    line-height: 1;
+}
+
+.alert-level-max {
+    font-size: 1.5rem;
+}
+
+.alert-level-text {
+    font-weight: 600;
+    color: #333;
+}
+
+/* Alert Level Colors */
+.alert-level-1 {
+    background-color: var(--alert-level-1-color);
+}
+
+.alert-level-2 {
+    background-color: var(--alert-level-2-color);
+}
+
+.alert-level-3 {
+    background-color: var(--alert-level-3-color);
+}
+
+.alert-level-4 {
+    background-color: var(--alert-level-4-color);
+}
+
+.alert-level-5 {
+    background-color: var(--alert-level-5-color);
+}
+
+/* Card Styles */
+.card {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    border: none;
+    margin-bottom: 20px;
+}
+
+.card-header {
+    border-radius: 8px 8px 0 0 !important;
+    font-weight: 600;
+}
+
+/* Chart Containers */
+.chart-container {
+    position: relative;
+    height: 200px;
+    width: 100%;
+    margin-bottom: 20px;
+}
+
+/* Indicator Lists */
+.sentiment-indicators, .market-indicators {
+    padding-left: 20px;
+}
+
+.sentiment-indicators li, .market-indicators li {
+    margin-bottom: 8px;
+}
+
+/* Severity Indicators */
+.severity-indicator {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    margin-right: 8px;
+}
+
+.severity-1 {
+    background-color: var(--alert-level-1-color);
+}
+
+.severity-2 {
+    background-color: var(--alert-level-2-color);
+}
+
+.severity-3 {
+    background-color: var(--alert-level-3-color);
+}
+
+.severity-4 {
+    background-color: var(--alert-level-4-color);
+}
+
+.severity-5 {
+    background-color: var(--alert-level-5-color);
+}
+
+/* Report Section */
+.report-content {
+    min-height: 200px;
+    padding: 15px;
+    background-color: #f8f9fa;
+    border-radius: 5px;
+}
+
+.report-section {
+    margin-bottom: 20px;
+}
+
+.report-section h4 {
+    border-bottom: 1px solid #dee2e6;
+    padding-bottom: 8px;
+    margin-bottom: 15px;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .alert-level-indicator {
+        width: 120px;
+        height: 120px;
+    }
+    
+    .alert-level-number {
+        font-size: 3rem;
+    }
+    
+    .chart-container {
+        height: 180px;
+    }
+}
+
+/* Loading Animation */
+.loading-spinner {
+    display: inline-block;
+    width: 2rem;
+    height: 2rem;
+    border: 0.25rem solid rgba(0, 0, 0, 0.1);
+    border-right-color: #007bff;
+    border-radius: 50%;
+    animation: spinner 0.75s linear infinite;
+}
+
+@keyframes spinner {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Insights List */
+#key-insights-list li {
+    margin-bottom: 10px;
+    padding-left: 5px;
+}
+
+/* Refresh Button Animation */
+.refresh-spin {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+} 

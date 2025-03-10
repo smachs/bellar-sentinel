@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crisis Sentinel - Crisis Prediction Dashboard</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/chart.js@4.0.0/dist/chart.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-shield-alt me-2"></i>
+                Crisis Sentinel
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#sentiment-section">Sentiment Analysis</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#market-section">Market Indicators</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#reports-section">Reports</a>
+                    </li>
+                </ul>
+            </div>
+            <span class="navbar-text">
+                <span id="last-updated">Last updated: Loading...</span>
+                <button class="btn btn-sm btn-outline-light ms-2" id="refresh-btn">
+                    <i class="fas fa-sync-alt"></i> Refresh
+                </button>
+            </span>
+        </div>
+    </nav>
+
+    <div class="container-fluid mt-4">
+        <!-- Alert Level Display -->
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            Current Crisis Alert Level
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="alert-level-display text-center">
+                                    <div class="alert-level-indicator" id="alert-level-indicator">
+                                        <span class="alert-level-number" id="alert-level-number">--</span>
+                                        <span class="alert-level-max">/5</span>
+                                    </div>
+                                    <h3 class="alert-level-text mt-2" id="alert-level-text">Loading...</h3>
+                                </div>
+                            </div>
+                            <div class="col-md-8">
+                                <div class="alert-description" id="alert-description">
+                                    <p>Loading crisis alert information...</p>
+                                </div>
+                                <div class="alert-insights mt-3">
+                                    <h5>Key Insights:</h5>
+                                    <ul id="key-insights-list">
+                                        <li>Loading insights...</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Dashboard Content -->
+        <div class="row">
+            <!-- Sentiment Analysis Section -->
+            <div class="col-md-6 mb-4" id="sentiment-section">
+                <div class="card h-100">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <i class="fas fa-comments me-2"></i>
+                            Sentiment Analysis
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="sentiment-summary mb-3" id="sentiment-summary">
+                            <p>Loading sentiment data...</p>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="chart-container">
+                                    <canvas id="sentiment-chart"></canvas>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Sentiment Indicators</h6>
+                                <ul class="sentiment-indicators" id="sentiment-indicators">
+                                    <li>Loading indicators...</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Market Indicators Section -->
+            <div class="col-md-6 mb-4" id="market-section">
+                <div class="card h-100">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">
+                            <i class="fas fa-chart-line me-2"></i>
+                            Market Indicators
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="market-summary mb-3" id="market-summary">
+                            <p>Loading market data...</p>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="chart-container">
+                                    <canvas id="market-chart"></canvas>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h6>Key Market Indicators</h6>
+                                <ul class="market-indicators" id="market-indicators">
+                                    <li>Loading indicators...</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Reports Section -->
+        <div class="row mb-4" id="reports-section">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0">
+                            <i class="fas fa-file-alt me-2"></i>
+                            Crisis Prediction Reports
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <div class="input-group">
+                                    <label class="input-group-text" for="report-type">Report Type</label>
+                                    <select class="form-select" id="report-type">
+                                        <option value="comprehensive">Comprehensive</option>
+                                        <option value="summary">Summary</option>
+                                        <option value="technical">Technical</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="input-group">
+                                    <label class="input-group-text" for="time-horizon">Time Horizon</label>
+                                    <select class="form-select" id="time-horizon">
+                                        <option value="short">Short Term (1-3 months)</option>
+                                        <option value="medium" selected>Medium Term (3-12 months)</option>
+                                        <option value="long">Long Term (1-3 years)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <button class="btn btn-primary" id="generate-report-btn">
+                                <i class="fas fa-file-download me-2"></i>
+                                Generate Report
+                            </button>
+                        </div>
+                        <div class="report-content mt-4" id="report-content">
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle me-2"></i>
+                                Select report options and click "Generate Report" to view crisis predictions.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer mt-auto py-3 bg-dark text-white">
+        <div class="container text-center">
+            <span>Crisis Sentinel &copy; 2025 | AI-Powered Crisis Prediction System</span>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.0.0/dist/chart.umd.min.js"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html> 

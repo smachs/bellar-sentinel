@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Crisis Sentinel specific
+config/config.json
+data/*.json
+logs/*.log
+logs/*.log.*
+
+# Environment variables
+.env
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+*.ipynb
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/ 
